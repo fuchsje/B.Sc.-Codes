@@ -1,0 +1,106 @@
+clc
+clear
+addpath 'M_library'
+rng(123)
+
+%% Data Loading
+Data_Full=readmatrix('EBP_Data_1.xlsx','Sheet','Combined_2012-2016','Range','B2:O62');
+OSS=10;
+Prediction_Errorm=zeros(OSS,1);
+
+for ind_oss=1:OSS
+    realized_y=Data_Full(end-ind_oss+1,1); %realized inflation rate
+    Data=Data_Full(1:end-ind_oss,:); %in-sample size
+    
+    Y=Data(2:end,1);
+    T=rows(Y); %sample size
+    X=[ones(T,1),Data(1:end-1,:)];
+    
+    x_T=[1;Data(end,1:end)'];
+
+K=width(X);
+
+%% Estimation
+
+p=0.5;
+%prior for beta
+b0=0.000001;
+b1=9;
+beta0=zeros(K,1);
+%prior for sigma2
+alpha0=5;
+delta0=5;
+
+%initialize values
+gamma=ones(K,1);
+sigma2=delta0/(alpha0-2);
+
+n=10000; %simulation size
+%saving the results
+betam=zeros(n,K);
+Sigm=zeros(n,1);
+Gammam=zeros(n,K);
+
+for iter=1:n
+    %% sample beta
+    B0=diag(gamma*b1+(1-gamma)*b0);%this is new, now B0 is defined wihtin an interation %K by K
+    B1=inv((1/sigma2)*X'*X+inv(B0));
+    beta1=B1*((1/sigma2)*X'*Y+inv(B0)*beta0);
+    beta=beta1+chol(B1)'*randn(K,1);
+    betam(iter,:)=beta';
+    %% sample sigma2
+    alpha1=alpha0+T;
+    delta1=delta0+(Y-X*beta)'*(Y-X*beta);
+    sigma2=randig(alpha1/2,delta1/2);
+    Sigm(iter,:)=sigma2';
+    %% sample Gammas
+    for i=1:K
+        pr1=exp(lnpdfn(beta(i),0,b1))*p;
+        pr0=exp(lnpdfn(beta(i),0,b0))*(1-p);
+        Prb1=pr1/(pr1+pr0);
+        u=rand(1,1);
+        if u<Prb1
+            gamma(i)=1;
+        else
+            gamma(i)=0;
+        end
+    end
+    Gammam(iter,:)=gamma';
+    
+    %% Forecasting
+    
+    y_T1=(x_T)'*beta+sqrt(sigma2)*randn(1,1);
+    Y_fm(iter)=y_T1;
+    
+end
+
+credibility_intervals=quantile(betam,[0.025,0.975])';
+disp('==========================================')
+disp('   beta    credibility interval')
+disp([meanc(betam), credibility_intervals])
+disp('------------------------------------------')
+disp(['sigma2 is ', num2str(meanc(Sigm))])
+disp('------------------------------------------')
+
+forecast=meanc(Y_fm); %forecast=posterior mean
+%Post_Prob1=meanc(Gammam); %importance of regressors
+
+% figure
+%x=1:K;
+%scatter(x,Post_Prob1,'filled')
+%xlim([0.5 K+0.5])
+%ylim([-0.1,1.1])
+%box on
+%grid on
+    prediction_error=realized_y-forecast;
+    
+    disp(['predicition error is ', num2str(prediction_error), '%'])
+    
+    Prediction_Errorm(ind_oss)=prediction_error;
+    
+end
+
+
+squared_errors=Prediction_Errorm'*Prediction_Errorm; %1 by 1
+RMSE=sqrt(squared_errors/OSS);
+disp(['RMSE is ', num2str(RMSE), '%'])

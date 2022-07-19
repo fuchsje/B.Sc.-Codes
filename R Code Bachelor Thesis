@@ -1,0 +1,666 @@
+ # Initial Packages---------------------
+rm(list = ls(all.names = TRUE))
+library(readxl)
+library(xtable)
+library(tidyverse)
+library("ggplot2")
+library(dplyr)
+library(sp)
+library(skimr)
+library(texreg)
+library(knitr)
+library(covr)
+library(lfe)
+library(stargazer)
+library(viridis)
+
+# Import Data Sets--------------------------
+# FULL DATA 
+data <- read_excel("Desktop/Data_BT_Fuchs.xlsx", sheet="balanced")
+ ## remove Berlin
+data <- data[data$city_code != 11000000,]
+ ## add log(inmigration) to data set
+data$log_inmigration <- log(data$inmigration)
+
+# UNBALANCED DATA
+data_unb <- read_excel("Desktop/Data_BT_Fuchs.xlsx", sheet="unbalanced", range="A1:I1953")
+data_unb$log_inmigration <- log(data_unb$inmigration)
+
+# ADAPTED BALANCED DATA (with index "cl" for "clean")
+data_cl <- read_excel("Desktop/Data_BT_Fuchs.xlsx", sheet="adapted balanced", range="A1:K1749")
+data_cl$log_inmigration <- log(data_cl$inmigration)
+
+# Descriptive Statistics --------------------------------------------------
+ # Create Separate Data Sets and Take Mean and SD from them
+data_aggregated <- 
+  data %>%
+  group_by(city_code) %>%
+  summarise_at("treated_all", 
+               funs("n_treated" = sum))
+
+data$sum_treated <- data_aggregated$n_treated[match(data$city_code,
+                                                    data_aggregated$city_code)]
+data$t_variation <- ifelse(data$sum_treated > 0 & data$sum_treated <= 19,
+                           1, 0)
+## all data
+paste("Number of cities:",length(unique(data$city_code)))
+paste("Mean",format(round(mean(data$inmigration),0)))
+paste("SD",format(round(sd(data$inmigration),0)))
+paste("Mean log",format(round(mean(data$log_inmigration),2)))
+paste("SD log",format(round(sd(data$log_inmigration),2)))
+## untreated data
+data_untreated <- data[data$t_variation == 0,] 
+paste("Number of cities untreated:",length(unique(data_untreated$city_code))) # 50 cities untreated
+paste("Mean",format(round(mean(data_untreated$inmigration),0)))
+paste("SD",format(round(sd(data_untreated$inmigration),0)))
+paste("Mean log",format(round(mean(data_untreated$log_inmigration),2)))
+paste("SD log",format(round(sd(data_untreated$log_inmigration),2)))
+## treated data
+data_treated <- data[data$t_variation == 1,]
+paste("Number of cities treated:",length(unique(data_treated$city_code))) # 60 cities treated
+paste("Mean",format(round(mean(data_treated$inmigration),0)))
+paste("SD",format(round(sd(data_treated$inmigration),0)))
+paste("Mean log",format(round(mean(data_treated$log_inmigration),2)))
+paste("SD log",format(round(sd(data_treated$log_inmigration),2)))
+# cities with welcome money in general
+data_aggregated <- 
+  data %>%
+  group_by(city_code) %>%
+  summarise_at("treated_money", funs("n_money"= sum))
+data$mon <- data_aggregated$n_money[match(data$city_code,
+                                          data_aggregated$city_code)]
+data_money <- data[data$mon != 0,]
+paste("Number of cities with money premiums:",length(unique(data_money$city_code))) # 36 cities
+paste("Mean",format(round(mean(data_money$inmigration),0)))
+paste("SD",format(round(sd(data_money$inmigration),0)))
+paste("Mean log",format(round(mean(data_money$log_inmigration),2)))
+paste("SD log",format(round(sd(data_money$log_inmigration),2)))
+# cities with both money and vouchers
+data_aggregated <- 
+  data %>%
+  group_by(city_code) %>%
+  summarise_at("treated_both", funs("n_both"= sum))
+data$both <- data_aggregated$n_both[match(data$city_code,
+                                          data_aggregated$city_code)]
+data_both <- data[data$both != 0,]
+paste("Number of cities with both money and voucher premiums:",length(unique(data_both$city_code))) # 4 cities
+paste("Mean",format(round(mean(data_both$inmigration),0)))
+paste("SD",format(round(sd(data_both$inmigration),0)))
+paste("Mean log",format(round(mean(data_both$log_inmigration),2)))
+paste("SD log",format(round(sd(data_both$log_inmigration),2)))
+
+# low premium data
+data$impl_lp <- ifelse(data$money_intervalls_p.a.=="0-100",1,0)
+data_aggregated <- 
+  data %>%
+  group_by(city_code) %>%
+  summarise_at("impl_lp", funs("lp"= sum))
+data$lp <- data_aggregated$lp[match(data$city_code,
+                                    data_aggregated$city_code)]
+data_lp <- data[data$lp != 0,]
+paste("Number of cities with low premiums:",length(unique(data_lp$city_code))) # 23 cities
+paste("Mean",format(round(mean(data_lp$inmigration),0)))
+paste("SD",format(round(sd(data_lp$inmigration),0)))
+paste("Mean log",format(round(mean(data_lp$log_inmigration),2)))
+paste("SD log",format(round(sd(data_lp$log_inmigration),2)))
+# high premium data
+data$impl_hp <- ifelse(data$money_intervalls_p.a.=="101-300",1,0)
+data_aggregated <- 
+  data %>%
+  group_by(city_code) %>%
+  summarise_at("impl_hp", funs("hp"= sum))
+data$hp <- data_aggregated$hp[match(data$city_code,
+                                    data_aggregated$city_code)]
+data_hp <- data[data$hp != 0,]
+paste("Number of cities with high premiums:",length(unique(data_hp$city_code))) # 25 cities
+paste("Mean",format(round(mean(data_hp$inmigration),0)))
+paste("SD",format(round(sd(data_hp$inmigration),0)))
+paste("Mean log",format(round(mean(data_hp$log_inmigration),2)))
+paste("SD log",format(round(sd(data_hp$log_inmigration),2)))
+# vouchers
+data_aggregated <- 
+  data %>%
+  group_by(city_code) %>%
+  summarise_at("treated_voucher", funs("n_vouch"= sum))
+data$vouch <- data_aggregated$n_vouch[match(data$city_code,
+                                            data_aggregated$city_code)]
+data_vouch <- data[data$vouch != 0,]
+paste("Number of cities with voucher premiums:",length(unique(data_vouch$city_code))) # 25 cities
+paste("Mean",format(round(mean(data_vouch$inmigration),0)))
+paste("SD",format(round(sd(data_vouch$inmigration),0)))
+paste("Mean log",format(round(mean(data_vouch$log_inmigration),2)))
+paste("SD log",format(round(sd(data_vouch$log_inmigration),2)))
+
+
+#UNBALANCED DATA#------------------------------------------------------------------
+data_aggregated <- 
+  data_unb %>%
+  group_by(city_code) %>%
+  summarise_at("treated_all", 
+               funs("n_treated" = sum))
+
+data_unb$sum_treated <- data_aggregated$n_treated[match(data_unb$city_code,
+                                                        data_aggregated$city_code)]
+data_unb$t_variation <- ifelse(data_unb$sum_treated > 0 & data_unb$sum_treated <= 19,
+                               1, 0)
+## all data
+paste("Number of cities:",length(unique(data_unb$city_code)))
+paste("Mean",format(round(mean(data_unb$inmigration),0)))
+paste("SD",format(round(sd(data_unb$inmigration),0)))
+## untreated data
+data_untreated_unb <- data_unb[data_unb$t_variation == 0,] 
+paste("Number of cities untreated:",length(unique(data_untreated_unb$city_code))) # 50 cities untreated
+paste("Mean",format(round(mean(data_untreated_unb$inmigration),0)))
+paste("SD",format(round(sd(data_untreated_unb$inmigration),0)))
+## treated data
+data_treated_unb <- data_unb[data_unb$t_variation == 1,]
+paste("Number of cities treated:",length(unique(data_treated_unb$city_code))) # 60 cities treated
+paste("Mean",format(round(mean(data_treated_unb$inmigration),0)))
+paste("SD",format(round(sd(data_treated_unb$inmigration),0)))
+# cities with welcome money in general
+data_aggregated <- 
+  data_unb %>%
+  group_by(city_code) %>%
+  summarise_at("treated_money", funs("n_money"= sum))
+data_unb$mon <- data_aggregated$n_money[match(data_unb$city_code,
+                                              data_aggregated$city_code)]
+data_money_unb <- data_unb[data_unb$mon != 0,]
+paste("Number of cities with money premiums:",length(unique(data_money_unb$city_code))) # 38 cities
+paste("Mean",format(round(mean(data_money_unb$inmigration),0)))
+paste("SD",format(round(sd(data_money_unb$inmigration),0)))
+# low premium data
+data_unb$impl_lp <- ifelse(data_unb$money_intervalls_p.a.=="0-100",1,0)
+data_aggregated <- 
+  data_unb %>%
+  group_by(city_code) %>%
+  summarise_at("impl_lp", funs("lp"= sum))
+data_unb$lp <- data_aggregated$lp[match(data_unb$city_code,
+                                        data_aggregated$city_code)]
+data_lp_unb <- data_unb[data_unb$lp != 0,]
+paste("Number of cities with low premiums:",length(unique(data_lp_unb$city_code))) # 23 cities
+paste("Mean",format(round(mean(data_lp_unb$inmigration),0)))
+paste("SD",format(round(sd(data_lp_unb$inmigration),0)))
+# high premium data
+data_unb$impl_hp <- ifelse(data_unb$money_intervalls_p.a.=="101-300",1,0)
+data_aggregated <- 
+  data_unb %>%
+  group_by(city_code) %>%
+  summarise_at("impl_hp", funs("hp"= sum))
+data_unb$hp <- data_aggregated$hp[match(data_unb$city_code,
+                                        data_aggregated$city_code)]
+data_hp_unb <- data_unb[data_unb$hp != 0,]
+paste("Number of cities with high premiums:",length(unique(data_hp_unb$city_code))) # 25 cities
+paste("Mean",format(round(mean(data_hp_unb$inmigration),0)))
+paste("SD",format(round(sd(data_hp_unb$inmigration),0)))
+# vouchers
+data_aggregated <- 
+  data_unb %>%
+  group_by(city_code) %>%
+  summarise_at("treated_voucher", funs("n_vouch"= sum))
+data_unb$vouch <- data_aggregated$n_vouch[match(data_unb$city_code,
+                                                data_aggregated$city_code)]
+data_vouch_unb <- data_unb[data_unb$vouch != 0,]
+paste("Number of cities with voucher premiums:",length(unique(data_vouch_unb$city_code))) # 28 cities
+paste("Mean",format(round(mean(data_vouch_unb$inmigration),0)))
+paste("SD",format(round(sd(data_vouch_unb$inmigration),0)))
+# cities with both money and vouchers
+data_aggregated <- 
+  data_unb %>%
+  group_by(city_code) %>%
+  summarise_at("treated_both", funs("n_both"= sum))
+data_unb$both <- data_aggregated$n_both[match(data_unb$city_code,
+                                              data_aggregated$city_code)]
+data_both_unb <- data_unb[data_unb$both != 0,]
+paste("Number of cities with both money and voucher premiums:",length(unique(data_both_unb$city_code))) # 4 cities
+paste("Mean",format(round(mean(data_both_unb$inmigration),0)))
+paste("SD",format(round(sd(data_both_unb$inmigration),0)))
+remove(data_aggregated)
+
+#ADAPTED BALANCED DATA#----------------------------------------------------------------
+data_aggregated <- 
+  data_cl %>%
+  group_by(city_code) %>%
+  summarise_at("treated_all", 
+               funs("n_treated" = sum))
+
+data_cl$sum_treated <- data_aggregated$n_treated[match(data_cl$city_code,
+                                                       data_aggregated$city_code)]
+data_cl$t_variation <- ifelse(data_cl$sum_treated > 0 & data_cl$sum_treated <= 19,
+                              1, 0)
+## all data
+paste("Number of cities:",length(unique(data_cl$city_code)))
+paste("Mean",format(round(mean(data_cl$inmigration),0)))
+paste("SD",format(round(sd(data_cl$inmigration),0)))
+## untreated data
+data_untreated_cl <- data_cl[data_cl$t_variation == 0,] 
+paste("Number of cities untreated:",length(unique(data_untreated_cl$city_code))) # 50 cities untreated
+paste("Mean",format(round(mean(data_untreated_cl$inmigration),0)))
+paste("SD",format(round(sd(data_untreated_cl$inmigration),0)))
+## treated data
+data_treated_cl <- data_cl[data_cl$t_variation == 1,]
+paste("Number of cities treated:",length(unique(data_treated_cl$city_code))) # 60 cities treated
+paste("Mean",format(round(mean(data_treated_cl$inmigration),0)))
+paste("SD",format(round(sd(data_treated_cl$inmigration),0)))
+# cities with welcome money in general
+data_aggregated <- 
+  data_cl %>%
+  group_by(city_code) %>%
+  summarise_at("treated_money", funs("n_money"= sum))
+data_cl$mon <- data_aggregated$n_money[match(data_cl$city_code,
+                                             data_aggregated$city_code)]
+data_money_cl <- data_cl[data_cl$mon != 0,]
+paste("Number of cities with money premiums:",length(unique(data_money_cl$city_code))) # 38 cities
+paste("Mean",format(round(mean(data_money_cl$inmigration),0)))
+paste("SD",format(round(sd(data_money_cl$inmigration),0)))
+# low premium data
+data_cl$impl_lp <- ifelse(data_cl$money_intervalls_p.a.=="0-100",1,0)
+data_aggregated <- 
+  data_cl %>%
+  group_by(city_code) %>%
+  summarise_at("impl_lp", funs("lp"= sum))
+data_cl$lp <- data_aggregated$lp[match(data_cl$city_code,
+                                       data_aggregated$city_code)]
+data_lp_cl <- data_cl[data_cl$lp != 0,]
+paste("Number of cities with low premiums:",length(unique(data_lp_cl$city_code))) # 23 cities
+paste("Mean",format(round(mean(data_lp_cl$inmigration),0)))
+paste("SD",format(round(sd(data_lp_cl$inmigration),0)))
+# high premium data
+data_cl$impl_hp <- ifelse(data_cl$money_intervalls_p.a.=="101-300",1,0)
+data_aggregated <- 
+  data_cl %>%
+  group_by(city_code) %>%
+  summarise_at("impl_hp", funs("hp"= sum))
+data_cl$hp <- data_aggregated$hp[match(data_cl$city_code,
+                                       data_aggregated$city_code)]
+data_hp_cl <- data_cl[data_cl$hp != 0,]
+paste("Number of cities with high premiums:",length(unique(data_hp_cl$city_code))) # 25 cities
+paste("Mean",format(round(mean(data_hp_cl$inmigration),0)))
+paste("SD",format(round(sd(data_hp_cl$inmigration),0)))
+# vouchers
+data_aggregated <- 
+  data_cl %>%
+  group_by(city_code) %>%
+  summarise_at("treated_voucher", funs("n_vouch"= sum))
+data_cl$vouch <- data_aggregated$n_vouch[match(data_cl$city_code,
+                                               data_aggregated$city_code)]
+data_vouch_cl <- data_cl[data_cl$vouch != 0,]
+paste("Number of cities with voucher premiums:",length(unique(data_vouch_cl$city_code))) # 28 cities
+paste("Mean",format(round(mean(data_vouch_cl$inmigration),0)))
+paste("SD",format(round(sd(data_vouch_cl$inmigration),0)))
+remove(data_aggregated)
+# cities with both money and vouchers
+data_aggregated <- 
+  data_cl %>%
+  group_by(city_code) %>%
+  summarise_at("treated_both", funs("n_both"= sum))
+data_cl$both <- data_aggregated$n_both[match(data_cl$city_code,
+                                             data_aggregated$city_code)]
+data_both_cl <- data_cl[data_cl$both != 0,]
+paste("Number of cities with both money and voucher premiums:",length(unique(data_both_cl$city_code))) # 4 cities
+paste("Mean",format(round(mean(data_both_cl$inmigration),0)))
+paste("SD",format(round(sd(data_both_cl$inmigration),0)))
+remove(data_aggregated)
+
+
+# Conventional Diff in Diff Analysis FULL DATA SET ---------------------------
+data$year <- as.factor(data$year)
+data$city_code <- as.factor(data$city_code)
+
+# Model 1: log(inmigration)= city fixed effects + year fixed effects + beta * all implemented indicator + e
+did1 <- felm(log_inmigration ~ treated_all | city + year, 
+              data = data)
+ ## City-level clustered Standard Errors
+did2<- felm(log_inmigration ~ treated_all | city + year | 0 | 
+              city, 
+            data = data, 
+            cmethod = "reghdfe")
+
+# Model 2: log(inmigration)=city fixed effects + year fixed effects + beta1 * money + beta2 * vouchers + beta3 * both + e
+did_type1 <- felm(log(inmigration) ~ treated_voucher + treated_money + treated_both | 
+                    city + year, 
+                  data = data)
+ ## City-level clustered Standard Errors
+did_type2 <- felm(log(inmigration) ~ treated_voucher + treated_money + treated_both | 
+                    city + year | 0 | 
+                    city, 
+                  data = data, 
+                  cmethod = "reghdfe")
+
+# Model 3: log(inmigration)=city fixed effects + year fixed effects + beta1 * 0-100 EUR + beta2 * 101-300 EUR + beta3 * vouchers + beta4 * both + e
+data$impl_low_premium <- ifelse(data$money_intervalls_p.a.=="0-100",1,0)
+data$impl_high_premium <- ifelse(data$money_intervalls_p.a.=="101-300",1,0) 
+did_premium_amount1 <- felm(log(inmigration) ~ impl_low_premium + impl_high_premium + treated_voucher + treated_both | 
+                              city + year, 
+                            data = data)
+ ## City-level clustered Standard Errors
+did_premium_amount2 <- felm(log(inmigration) ~ impl_low_premium + impl_high_premium + treated_voucher + treated_both | 
+                              city + year | 0 | city, 
+                            data = data,
+                            cmethod = "reghdfe")
+
+# Conventional Diff in Diff Analysis UNBALANCED DATA SET ---------------------------
+# Model 1
+did_unb1 <- felm(log_inmigration ~ treated_all | 
+                   city + year, 
+                 data = data_unb)
+## City-level clustered Standard Errors
+did_unb2 <- felm(log_inmigration ~ treated_all | 
+                   city + year | 0 | city, 
+                 data = data_unb, 
+                 cmethod = "reghdfe")
+# Model 2
+did_type_unb1 <- felm(log_inmigration ~ treated_money + treated_voucher + treated_both | 
+                        city + year, 
+                      data = data_unb)
+ ## City-level clustered Standard Errors
+did_type_unb2 <- felm(log_inmigration ~ treated_voucher + treated_money + treated_both | 
+                        city + year | 0 | city, 
+                      data = data_unb, 
+                      cmethod = "reghdfe")
+
+# Model 3
+data_unb$impl_low_premium <- ifelse(data_unb$money_intervalls_p.a.=="0-100",1,0)
+data_unb$impl_high_premium <- ifelse(data_unb$money_intervalls_p.a.=="101-300",1,0)
+did_premium_amount_unb1 <- felm(log_inmigration ~ impl_low_premium + impl_high_premium + treated_voucher + treated_both |
+                                  city + year,
+                                data = data_unb)
+ ## City-level clustered Standard Errors
+did_premium_amount_unb2 <- felm(log_inmigration ~ impl_low_premium + impl_high_premium + treated_voucher + treated_both | 
+                                  city + year | 0 | city, 
+                                data = data_unb,
+                                cmethod = "reghdfe")
+
+# Summaries----------------------------
+stargazer(did1,did_type1,did_premium_amount1,did_unb1,did_type_unb1,did_premium_amount_unb1, title = "Regression Results TWFE",
+          align=TRUE,
+          omit.stat=c("LL","ser","f"), no.space=TRUE)
+stargazer(did1,did_type1,did_premium_amount1,did2,did_type2,did_premium_amount2, title = "Regression Results Balanced Panel - Clustered Errors",
+          align=TRUE,
+          omit.stat=c("LL","ser","f"), no.space=TRUE)
+stargazer(did_unb1,did_type_unb1,did_premium_amount_unb1,did_unb2,did_type_unb2,did_premium_amount_unb2, title = "Regression Results Balanced Panel - Clustered Errors",
+          align=TRUE,
+          omit.stat=c("LL","ser","f"), no.space=TRUE)
+
+# Wolfsburg Simulation-----------------------
+did <- lm(log(inmigration) ~ treated_all + as.factor(year) + as.factor(city), data = data_unb)
+summary(did)
+## save coefficients
+beta_hat <- coef(did)
+## save variance covariance matrix
+V_hat <- vcov(did) 
+
+### Step 2: Draw from multivariate normal distribution
+library(MASS)
+# Set the number of draws/simulations.
+
+nsim <- 1000 
+
+# Draw from the multivariate normal distribution to get S.
+
+S <- mvrnorm(nsim, beta_hat, V_hat)
+dim(S) # Check dimensions
+
+scenario_Wolfsburg_07 <- c(1,
+                           0,
+                           rep(0,6),
+                           1,
+                           rep(0,115),
+                           1,
+                           rep(0,4)
+)
+scenario_Wolfsburg_08_tr <- c(1,
+                              1,
+                              rep(0,7),
+                              1,
+                              rep(0,114),
+                              1,
+                              rep(0,4)
+)
+scenario_Wolfsburg_08_contr <- c(1,
+                                 0,
+                                 rep(0,7),
+                                 1,
+                                 rep(0,114),
+                                 1,
+                                 rep(0,4)
+)
+
+EV_W_07 <- S %*% as.matrix(scenario_Wolfsburg_07)  
+EV_W_08_tr <- S %*% as.matrix(scenario_Wolfsburg_08_tr)  
+EV_W_08_co <- S %*% as.matrix(scenario_Wolfsburg_08_contr)  
+
+
+fd_Wolfsburg <- EV_W_08_tr - EV_W_08_co
+
+quants_mean_fun <-  function(x) {
+  c(quants = quantile(x, probs = c(0.025, 0.975)),
+    mean = mean(x))
+}
+
+quants_W_07 <- apply(EV_W_07, 2, quants_mean_fun)
+quants_W_08_tr <- apply(EV_W_08_tr, 2, quants_mean_fun)
+quants_W_08_co <- apply(EV_W_08_co, 2, quants_mean_fun)
+quants_fd_Wolfsburg <- apply(fd_Wolfsburg, 2, quants_mean_fun)
+
+xshift <- 0.01
+
+### Plot Wolfsburg-------------
+library(viridis)
+
+
+# Expected Values
+layout(t(matrix(c(1,1,2))))
+par(mgp=c(3,1,0))
+plot(x = c(0, 1),
+     y = rep(quants_W_07["mean",], 2),
+     ylim = c(8.1, 8.3),
+     xlim = c(-0.1, 1.1),
+     type = "n",
+     cex.main=1.4,
+     cex.lab=1.4,
+     cex.axis=1.3,
+     main = "Simulated DID"~hat(y)~"-values for base city Wolfsburg",
+     xlab = "",
+     ylab = "log in-migration",
+     las = 1,
+     xaxt = "n")
+axis(1,
+     at = c(0, 1),
+     labels = c("pre-treatment",
+                "post-treatment"),
+     cex.axis=1.4)
+mtext("2007",side=1,line=2.5, at=0,cex=0.95,col="black")
+mtext("2008",side=1,line=2.5, at=1,cex=0.95,col="black")
+legend("topleft",
+       legend = c("untreated",
+                  "treated"),
+       lty = c("solid", "solid"),
+       cex=1.4,
+       col = viridis(2),
+       lwd=2)
+
+# connecting lines
+# 1) control group
+segments(x0 = 0-xshift,
+         x1 = 1-xshift,
+         y0 = quants_W_07["mean",],
+         y1 = quants_W_08_co["mean",],
+         col = viridis(2)[1],
+         lwd=2)
+# 2) treated group
+segments(x0 = 0+xshift,
+         x1 = 1+xshift,
+         y0 = quants_W_07["mean",],
+         y1 = quants_W_08_tr["mean",],
+         col = viridis(2)[2],
+         lwd=2)
+
+# control pre & post treatment
+points(x = c(0, 1)-xshift,
+       y = c(quants_W_07["mean",],
+             quants_W_08_co["mean",]),
+       col = viridis(2)[1],
+       pch = 19)
+segments(x0 = 0-xshift, x1 = 0-xshift,
+         y0 = quants_W_07["quants.2.5%",],
+         y1 = quants_W_07["quants.97.5%",],
+         col = viridis(2)[1],
+         lwd=2)
+points(x = 0+xshift,
+       y = quants_W_07["mean",],
+       col = viridis(2)[2],
+       pch = 19)
+segments(x0 = 0+xshift, x1 = 0+xshift,
+         y0 = quants_W_07["quants.2.5%",],
+         y1 = quants_W_07["quants.97.5%",],
+         col = viridis(2)[2],
+         lwd=2)
+
+# treatment (post treatment)
+points(x = 1+xshift, 
+       y = quants_W_08_tr["mean",],
+       col = viridis(2)[2],
+       pch = 19)
+
+segments(x0 = 1-xshift, x1 = 1-xshift,
+         y0 = quants_W_08_co["quants.2.5%",],
+         y1 = quants_W_08_co["quants.97.5%",],
+         col = viridis(2)[1],
+         lwd=2)
+
+segments(x0 = 1+xshift, x1 = 1+xshift,
+         y0 = quants_W_08_tr["quants.2.5%",],
+         y1 = quants_W_08_tr["quants.97.5%",],
+         col = viridis(2)[2],Lwd=2)
+text(1+4*xshift, 8.232,
+     '{',srt=180,
+     family = 'Helvetica Neue UltraLight',
+     cex=3.6, pos=4,col="black")
+text(1+4*xshift, 8.23,
+     expression(hat(beta)),
+     cex=1.4,
+     pos=4,col="black")
+
+plot(x = 0,
+     y = rep(quants_fd_Wolfsburg["mean",]),
+     pch = 19,
+     ylim = c(-0.01, 0.042),
+     col = viridis(2)[2],
+     las = 1,
+     main = "Post-treatment" ~"Difference",
+     ylab =  "difference in in-migration)",
+     cex.main=1.4,
+     cex.lab=1.4,
+     cex.axis=1.3,
+     xaxt = "n",
+     xlab = "")
+abline(h = 0)
+segments(x0 = 0, x1 = 0,
+         y0 = quants_fd_Wolfsburg["quants.2.5%",],
+         y1 = quants_fd_Wolfsburg["quants.97.5%",],
+         col = viridis(2)[2],
+         lwd=2)
+text(0, 0.025,
+     expression(hat(beta) == 0.025),
+     cex=1.4, pos=4,col="black")
+
+
+# Back-transform the values
+summary_did <- summary(did)
+sigma2 <- (summary_did[["sigma"]])^2
+r1 <- as.array(apply(EV_W_08_tr, 1, function(x) exp(x+0.5*sigma2)))
+result1 <- (1/1000)*sum(r1)
+result1
+
+r0 <- as.array(apply(EV_W_08_co, 1, function(x) exp(x+0.5*sigma2)))
+result0 <- (1/1000)*sum(r0)
+result0
+
+diff_inmigration <- result1 - result0
+
+# Bacon Decomposition with Adapted Balanced Data Set--------------------------
+library(bacondecomp)
+treated_all <- data_cl$treated_all
+year <- data_cl$year
+city_code <- data_cl$city_code
+log_inmigration <- log(data_cl$inmigration)
+y <- data_cl$log_inmigration
+did_df <- data.frame(city_code, year,log_inmigration,treated_all)
+bacon_dec <- bacon(log_inmigration ~ treated_all, data = did_df, id_var="city_code", time_var="year", quietly = F)
+
+library(ggplot2)
+
+ggplot(bacon_dec) +
+  aes(x = weight, y = estimate, shape = factor(type)) +
+  ggtitle("Bacon-Decomposition of DID Coefficient")+
+  labs(x = "Weight", y = "Estimate", shape = "Type") +
+  geom_point() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                       panel.background = element_blank(), axis.line = element_line(colour = "black"),
+                       legend.key = element_rect(colour = "transparent", fill = "white"),
+                       plot.title = element_text(hjust = 1.5))+
+  geom_hline(yintercept=0.025,color = viridis(2)[2]) +
+  annotate("text", 0.11,0.017, label = expression("Average DID coefficient = 0.025"), size=3.2)+
+  geom_point(x=0.0566624,y=0.09225960, shape=3, color=viridis(4)[3])+
+  annotate("text", 0.0655,0.126, label = "DID coefficient for cities treated in 2008 vs. untreated = 0.092", size=3.2)
+
+# Event Study with Adapted Balanced Data Set ---------------------------------
+# CLARKE,SCHYTHE
+
+data <- data_cl
+library(fixest)
+data$log_inmigration <- log(data$inmigration)
+# create a treated variable signaling which cities are treated at all
+data_aggregated <- 
+  data %>%
+  group_by(city_code) %>%
+  summarise_at("treated_all", 
+               funs("n_treated" = sum))
+
+data$sum_treated <- data_aggregated$n_treated[match(data$city_code,
+                                                    data_aggregated$city_code)]
+data$treat <- ifelse(data$sum_treated > 0 & data$sum_treated <= 19, 1, 0)
+remove(data_aggregated)
+## Implement Event Study
+event_study = feols(log_inmigration ~ i(time_to_treatment, treat, ref =-1)|
+                      city_code + year, 
+                    cluster = ~ city_code,
+                    data = data,
+                    method="reghdfe")
+par(mfrow=c(1,1))
+iplot(event_study, 
+      xlab = 'Time to treatment',
+      main = 'Event Study: Staggered Treatment (TWFE)')
+
+# Extra: University Cities Analysis----------------------
+
+# How many cities with Universities?
+data_treated_uni <- data_treated[data_treated$university==1,]
+data_treat_nouni <- data_treated[data_treated$university==0,]
+data_untreated_uni <- data_untreated[data_untreated$university==1,]
+
+paste("Number of treated cities with universities:",length(unique(data_treated_uni$city_code)))
+paste("Number of treated cities without universities:",length(unique(data_treat_nouni$city_code)))
+paste("Number of untreated cities with universities:",length(unique(data_untreated_uni$city_code)))
+
+# Extra: Tax and Premium Implementation Years Comparison
+
+# Frequencies of implemented secondary residence taxes in a year counted 'by hand' for 2001-2018
+datafreqtax <- data.frame(c(2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018),c(1,1,3,2,2,4,1,1,1,1,6,2,0,0,2,1,2,1))
+datayearprem <- data.frame(c(2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018),c(1,0,6,2,0,1,3,1,2,3,2,0,0,0,0,1,0,1))
+
+par(mar=c(5.1, 4.1, 4.1, 2.1), mgp=c(3, 1, 0), las=0)
+par(mfrow=c(1,1))
+plot(datafreqtax,
+     xlim=c(2001,2018),
+     ylim=c(-0.3,6.3),
+     ylab="Number of cities",
+     xlab="Year of implementation",
+     type="l",col=viridis(2)[1])
+lines(datayearprem,type="l",col=viridis(2)[2])
+legend(2012.6,6.6,
+       legend = c("secondary tax",
+                  "registration premium"),
+       lty = c("solid", "solid"),
+       col = viridis(2))
+
+

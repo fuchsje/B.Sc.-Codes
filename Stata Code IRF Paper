@@ -1,0 +1,115 @@
+drop _all
+clear all
+set more 1
+//------------------------Specify Data and some Preliminares------------------------------------------
+
+import excel "C:\Users\lukpi\Desktop\Seminar Oil Shocks\Data\Daten -  erster Versuch.xlsx", sheet("Tabelle1") firstrow
+
+//set up the times series data 
+gen mdates = mofd(dates)	 			
+format mdates %tm
+tsset mdates, m
+
+//Sample filtering 
+drop if mdates < m(1978m1)		
+drop if mdates > m(2019m12)
+
+//define local parameters 
+local p = 2			//number of lags
+local hor = 48		// 48 horizons of IRFs 
+
+//define (and transform variables)
+gen lip = 100*log(INDPRO)		//log of industrial production
+gen infl = CPIAUCSL_PC1			// %-change of inflation rate via USA CPI 
+gen ffr = FEDFUNDS				// Federal Funds interest rate
+gen log_global_oil_prod = 100*log(globaloilproductionmillionb) //log of global oil production (in million of barral)
+gen log_real_WIT_spot_price = 100* log(realWTIspotprice) //log of real WIT spot price 
+gen consumersent = ConsumersentimentIndex //Consumer Sentiment Index by the University of Michigan
+gen oil_supply_shock = oilsupplyshock //oil supply shock by Baumgarten and Hamilton 
+gen t = _n						//linear trend 
+gen t2 = t^2					//quadratic trend
+gen h = t-1					
+
+
+//define vectors for coefficients and upper/lower bounds of 68% and 95% confidence intervals
+foreach var in lip infl ffr log_global_oil_prod log_real_WIT_spot_price consumersent{
+	quietly gen b`var' = .
+	quietly gen up68`var' = .
+    quietly gen lo68`var' = .
+    quietly gen up95`var' = .
+    quietly gen lo95`var' = .
+	}
+
+//------------------------------Estimate Local Projectioln-----------------------------------------------
+forvalues i = 0/`hor'  {
+   foreach var in lip infl ffr log_global_oil_prod log_real_WIT_spot_price consumersent {
+      quietly newey F`i'.`var' L(0/`p').oil_supply_shock L(1/`p').infl L(1/`p').lip L(1/`p').ffr L(1/`p').consumersent L(1/`p').log_global_oil_prod L(1/`p').log_real_WIT_spot_price  t t2, lag(`=`i' + 1')
+	  gen b`var'h`i' = _b[oil_supply_shock]							
+      gen se`var'h`i' = _se[oil_supply_shock]
+      quietly replace b`var' = b`var'h`i' if h==`i'
+      quietly replace up68`var' = b`var'h`i' + 1*se`var'h`i' if h==`i' 
+	  quietly replace lo68`var' = b`var'h`i' - 1*se`var'h`i' if h==`i'
+      quietly replace up95`var' = b`var'h`i' + 2*se`var'h`i' if h==`i'
+	  quietly replace lo95`var' = b`var'h`i' - 2*se`var'h`i' if h==`i'
+	  } 
+}
+
+//standarize maximum response of consumersent for plotting and specify a negative shock
+summarize blog_global_oil_prod
+
+scalar nrm = r(max)							
+foreach var in lip infl ffr log_global_oil_prod log_real_WIT_spot_price consumersent {     	
+     replace b`var' = b`var'/-nrm 			
+	 replace lo68`var' = lo68`var'/-nrm
+	 replace up68`var' = up68`var'/-nrm
+	 replace lo95`var' = lo95`var'/-nrm
+	 replace up95`var' = up95`var'/-nrm
+	 }
+	 
+gen zeroline=0*blip 						 				
+
+
+
+//----------------------------------Plotting our IRFs---------------------------------------------------------------
+
+// Plotting IRF of FFR
+quietly tw (rarea up95ffr lo95ffr h, bcolor(gs12) clw(medthin medthin)) ///
+   (rarea up68ffr lo68ffr h, bcolor(gs10) clw(medthin medthin)) ///
+   (scatter bffr zeroline h, c(l l l) clp(l l .) ms(o i i) clc(blue black green) mc(blue black green) clw(medthick)) if h <= 50 , ///
+   title("Federal funds rate", size(medsmall)) legend(off) xtitle("months") ytitle("percentage points") scale(0.9) saving(oil_supply_shock_ffr.gph,replace)
+
+//Plotting IRF of Industrial Production 
+quietly tw (rarea up95lip lo95lip h, bcolor(gs12) clw(medthin medthin)) ///
+   (rarea up68lip lo68lip h, bcolor(gs10) clw(medthin medthin)) ///
+   (scatter blip zeroline h,c(l l l) clp(l l .) ms(o i i) clc(blue black green) mc(blue black green) clw(medthick)) if h<= 50 , ///
+   title("Industrial Production", size(medsmall)) legend(off) xtitle("months") ytitle("percent") scale(0.9) saving(oil_supply_shock_lip.gph,replace) 
+ 
+//Plotting IRF of Consumer Price Index 
+quietly tw (rarea up95infl lo95infl h, bcolor(gs12) clw(medthin medthin)) ///
+   (rarea up68infl lo68infl h, bcolor(gs10) clw(medthin medthin)) ///
+  (scatter binfl zeroline h,c(l l l) clp(l l .) ms(o i i) clc(blue black green) mc(blue black green) clw(medthick)) if h<= 50 , ///
+  title("Consumer Price Index", size(medsmall)) legend(off) xtitle("months") ytitle("percentage points") scale(0.9) saving(oil_supply_shock_infl.gph,replace) 
+
+//Plotting IRF of Consumer Sentiment Index
+quietly tw (rarea up95consumersent lo95consumersent h, bcolor(gs12) clw(medthin medthin)) ///
+   (rarea up68consumersent lo68consumersent h, bcolor(gs10) clw(medthin medthin)) ///
+  (scatter bconsumersent zeroline h,c(l l l) clp(l l .) ms(o i i) clc(blue black green) mc(blue black green) clw(medthick)) if h<= 50 , ///
+  title("Index of Consumer Sentiment", size(medsmall)) legend(off) xtitle("months") ytitle("index points") scale(0.9) saving(oil_supply_shock_consumersent.gph,replace) 
+  
+//Plotting IRF of log_global_oil_prod
+quietly tw (rarea up95log_global_oil_prod lo95log_global_oil_prod h, bcolor(gs12) clw(medthin medthin)) ///
+   (rarea up68log_global_oil_prod lo68log_global_oil_prod h, bcolor(gs10) clw(medthin medthin)) ///
+   (scatter blog_global_oil_prod zeroline h, c(l l l) clp(l l .) ms(o i i) clc(blue black green) mc(blue black green) clw(medthick)) if h <= 50 , ///
+   title("Global Oil Production", size(medsmall)) legend(off) xtitle("months") ytitle("percent") xscale(range(0 50)) scale(0.9) saving(oil_supply_shock_log_global_oil_prod.gph,replace)
+
+//Plotting IRF of log_real_WIT_spot_price
+quietly tw (rarea up95log_real_WIT_spot_price lo95log_real_WIT_spot_price h, bcolor(gs12) clw(medthin medthin)) ///
+   (rarea up68log_real_WIT_spot_price lo68log_real_WIT_spot_price h, bcolor(gs10) clw(medthin medthin)) ///
+   (scatter blog_real_WIT_spot_price zeroline h, c(l l l) clp(l l .) ms(o i i) clc(blue black green) mc(blue black green) clw(medthick)) if h <= 50 , ///
+   title("Real WIT Spot Price", size(medsmall)) legend(off) xtitle("months") ytitle("percent") xscale(range(0 50)) scale(0.9) saving(oil_supply_shock_log_real_WIT_spot_price.gph,replace)
+
+
+
+//Combine the individual plots named above 
+graph combine oil_supply_shock_ffr.gph oil_supply_shock_lip.gph oil_supply_shock_infl.gph oil_supply_shock_consumersent.gph oil_supply_shock_log_global_oil_prod.gph oil_supply_shock_log_real_WIT_spot_price.gph 
+ 
